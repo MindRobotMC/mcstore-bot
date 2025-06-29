@@ -73,7 +73,7 @@ async def callback(client, query):
 
     if data == "order":
         app.user_data[user_id] = {"step": "waiting_order_text"}
-        await query.message.edit("📝 لطفاً توضیح سفارش خود را ارسال کنید:", reply_markup=main_menu())
+        await query.message.edit_text("📝 لطفاً توضیح سفارش خود را ارسال کنید:", reply_markup=main_menu())
 
     elif data == "my_orders":
         user_orders = [o for o in orders if o["user_id"] == user_id]
@@ -82,15 +82,15 @@ async def callback(client, query):
         else:
             text = "📋 سفارشات شما:\n\n"
             for o in user_orders[-5:]:
-                text += f"🔹 کد: {o['tracking_code']}\n📝 {o['order_text'][:50]}...\n\n"
-        await query.message.edit(text, reply_markup=main_menu())
+                text += f"🔹 کد: `{o['tracking_code']}`\n📝 {o['order_text'][:50]}...\n\n"
+        await query.message.edit_text(text, reply_markup=main_menu())
 
     elif data == "verify":
         app.user_data[user_id] = {"step": "waiting_verification"}
-        await query.message.edit("🆔 لطفاً تصویر کارت ملی یا هویت خود را ارسال کنید:", reply_markup=main_menu())
+        await query.message.edit_text("🆔 لطفاً تصویر کارت ملی یا هویت خود را ارسال کنید:", reply_markup=main_menu())
 
     elif data == "profile":
-        await query.message.edit(
+        await query.message.edit_text(
             f"👤 پروفایل شما:\n\n"
             f"نام: {user.first_name}\n"
             f"یوزرنیم: @{user.username if user.username else 'ندارد'}\n"
@@ -99,7 +99,7 @@ async def callback(client, query):
         )
 
     elif data == "support":
-        await query.message.edit(
+        await query.message.edit_text(
             "📞 برای پشتیبانی به آیدی زیر پیام بده:\n\n"
             "@MindRobotMC",
             reply_markup=main_menu()
@@ -120,9 +120,9 @@ async def handle_message(client, message):
         if message.photo or message.document:
             await message.reply("✅ ارسال شد. منتظر بررسی ادمین باشید.", reply_markup=main_menu())
             if message.photo:
-                await app.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"احراز هویت از {user_id}")
+                await app.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"📸 احراز هویت از {user_id}")
             else:
-                await app.send_document(ADMIN_ID, message.document.file_id, caption=f"احراز هویت از {user_id}")
+                await app.send_document(ADMIN_ID, message.document.file_id, caption=f"📄 احراز هویت از {user_id}")
         else:
             await message.reply("⚠️ لطفاً فقط عکس یا سند ارسال کنید.")
         app.user_data.pop(user_id, None)
@@ -130,7 +130,11 @@ async def handle_message(client, message):
 
     # --- سفارش ---
     if state.get("step") == "waiting_order_text":
-        app.user_data[user_id]["order_text"] = message.text
+        text = message.text or ""
+        if not text.strip():
+            await message.reply("⚠️ لطفاً توضیح سفارش را به صورت متنی ارسال کنید.")
+            return
+        app.user_data[user_id]["order_text"] = text
         app.user_data[user_id]["step"] = "waiting_order_receipt"
         await message.reply("📤 لطفاً تصویر یا شماره رسید پرداخت را ارسال کنید.")
         return
@@ -138,7 +142,6 @@ async def handle_message(client, message):
     if state.get("step") == "waiting_order_receipt":
         order_text = app.user_data[user_id].get("order_text", "")
         tracking_code = generate_code()
-        receipt = None
 
         if message.photo:
             receipt = {"type": "photo", "file_id": message.photo[-1].file_id}
@@ -158,9 +161,14 @@ async def handle_message(client, message):
             "receipt": receipt,
             "tracking_code": tracking_code
         }
-        orders.append(order)
-        with open("orders.json", "w", encoding="utf-8") as f:
-            json.dump(orders, f, ensure_ascii=False, indent=2)
+
+        try:
+            orders.append(order)
+            with open("orders.json", "w", encoding="utf-8") as f:
+                json.dump(orders, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            await message.reply("❌ خطا در ذخیره سفارش. لطفاً مجدداً تلاش کنید.")
+            return
 
         caption = (
             f"📥 سفارش جدید:\n"
@@ -168,6 +176,7 @@ async def handle_message(client, message):
             f"📝 {order_text}\n"
             f"🔑 کد رهگیری: {tracking_code}"
         )
+
         if receipt["type"] == "photo":
             await app.send_photo(ADMIN_ID, receipt["file_id"], caption=caption)
         elif receipt["type"] == "document":
@@ -179,6 +188,7 @@ async def handle_message(client, message):
         app.user_data.pop(user_id, None)
         return
 
+    # --- حالت پیش‌فرض ---
     await message.reply("❗ لطفاً از منوی اصلی یکی از گزینه‌ها را انتخاب کنید.", reply_markup=main_menu())
 
 # --- اجرا ---
